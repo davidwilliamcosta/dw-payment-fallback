@@ -120,6 +120,9 @@ class DW_Payment_Fallback {
 		if ( ! $order ) {
 			return;
 		}
+		if ( $this->maybe_cancel_after_fallback_failure( $order ) ) {
+			return;
+		}
 		$this->offer_fallback_if_primary_failed( $order );
 	}
 
@@ -135,11 +138,48 @@ class DW_Payment_Fallback {
 		if ( ! $order ) {
 			return;
 		}
+		if ( $this->maybe_cancel_after_fallback_failure( $order ) ) {
+			return;
+		}
 		// Só oferecer fallback em on-hold se a opção estiver ativa (evitar conflito com outros fluxos).
 		if ( get_option( 'dw_fallback_also_on_hold', 'no' ) !== 'yes' ) {
 			return;
 		}
 		$this->offer_fallback_if_primary_failed( $order );
+	}
+
+	/**
+	 * Se o pedido já tentou fallback e falhou de novo, cancela automaticamente.
+	 *
+	 * @param WC_Order $order Pedido.
+	 * @return bool True quando o pedido foi tratado/cancelado.
+	 */
+	private function maybe_cancel_after_fallback_failure( WC_Order $order ) {
+		// Só aplica se o fallback já foi oferecido anteriormente.
+		if ( ! $order->get_meta( self::META_FALLBACK_OFFERED ) ) {
+			return false;
+		}
+
+		$fallback_ids = self::get_fallback_gateway_ids();
+		$current      = $order->get_payment_method();
+		if ( ! in_array( $current, $fallback_ids, true ) ) {
+			return false;
+		}
+
+		if ( $order->get_status() !== 'cancelled' ) {
+			$order->update_status(
+				'cancelled',
+				__( 'Pagamento falhou novamente no método alternativo. Pedido cancelado automaticamente.', 'dw-payment-fallback' )
+			);
+		}
+
+		// Limpa dados de retry para não oferecer nova tentativa.
+		if ( WC()->session ) {
+			WC()->session->set( 'dw_fallback_last_order_id', 0 );
+			WC()->session->set( 'dw_fallback_last_pay_url', '' );
+		}
+
+		return true;
 	}
 
 	/**
@@ -491,6 +531,13 @@ class DW_Payment_Fallback {
 		if ( empty( $pay_url ) && $order_id ) {
 			$order = wc_get_order( $order_id );
 			if ( $order instanceof WC_Order ) {
+				if ( $order->get_status() === 'cancelled' ) {
+					if ( WC()->session ) {
+						WC()->session->set( 'dw_fallback_last_order_id', 0 );
+						WC()->session->set( 'dw_fallback_last_pay_url', '' );
+					}
+					wp_send_json_error();
+				}
 				if ( ! $this->can_current_visitor_pay_order( $order ) ) {
 					wp_send_json_error();
 				}
