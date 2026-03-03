@@ -354,7 +354,7 @@ class DW_Payment_Fallback {
 		if ( $order && $order->get_meta( self::META_FALLBACK_OFFERED ) ) {
 			// FunnelKit + alguns gateways (ex.: Mercado Pago custom) não renderizam bem no order-pay.
 			// Nesses casos, direcionar retry para o checkout em modo fallback.
-			if ( $this->is_funnelkit_checkout_active() ) {
+			if ( $this->is_custom_checkout_builder_active() ) {
 				return $this->get_checkout_fallback_url( $order );
 			}
 			$url = add_query_arg( 'dw_fallback', '1', $url );
@@ -393,7 +393,7 @@ class DW_Payment_Fallback {
 			return;
 		}
 		// Em FunnelKit, preferimos retry no checkout; não forçar manipulação no order-pay.
-		if ( $this->is_funnelkit_checkout_active() ) {
+		if ( $this->is_custom_checkout_builder_active() ) {
 			return;
 		}
 		$order_id = absint( get_query_var( 'order-pay' ) );
@@ -561,7 +561,7 @@ class DW_Payment_Fallback {
 		}
 
 		// Compatibilidade FunnelKit: usar checkout em modo fallback no lugar de order-pay.
-		if ( $this->is_funnelkit_checkout_active() ) {
+		if ( $this->is_custom_checkout_builder_active() ) {
 			$order = $order_id ? wc_get_order( $order_id ) : null;
 			$pay_url = $this->get_checkout_fallback_url( $order instanceof WC_Order ? $order : null );
 		}
@@ -652,6 +652,15 @@ class DW_Payment_Fallback {
 	}
 
 	/**
+	 * Detecta se há checkout builder custom ativo que exige retry no checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_custom_checkout_builder_active() {
+		return $this->is_funnelkit_checkout_active() || $this->is_wooflow_checkout_active();
+	}
+
+	/**
 	 * Detecta FunnelKit Checkout ativo (nomes antigos e novos).
 	 *
 	 * @return bool
@@ -661,5 +670,16 @@ class DW_Payment_Fallback {
 			|| class_exists( 'WFACP_Common' )
 			|| class_exists( 'FKWCS' )
 			|| class_exists( 'FKCart' );
+	}
+
+	/**
+	 * Detecta WooFlow Checkout ativo.
+	 *
+	 * @return bool
+	 */
+	private function is_wooflow_checkout_active() {
+		return defined( 'WOOFLOW_CHECKOUT_VERSION' )
+			|| class_exists( 'WooFlow_Checkout_Plugin' )
+			|| class_exists( 'WooFlow_Checkout_Frontend' );
 	}
 }
